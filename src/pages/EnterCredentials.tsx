@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { Checkbox } from "@/components/ui/checkbox";
 import { motion } from "framer-motion";
 import Layout from "@/components/Layout";
 import Stepper from "@/components/Stepper";
@@ -33,10 +32,8 @@ const EnterCredentials = () => {
   const { provider, reportType, setCredentials, setInstances, setRdsInstances } = useReport();
   const [accessKeyId, setAccessKeyId] = useState("");
   const [secretAccessKey, setSecretAccessKey] = useState("");
-  const [accountId, setAccountId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [useMockData, setUseMockData] = useState(false);
 
   const steps = getSteps(reportType);
   
@@ -70,47 +67,21 @@ const EnterCredentials = () => {
       // Store credentials
       const credentials = {
         accessKeyId,
-        secretAccessKey,
-        accountId: accountId || undefined
+        secretAccessKey
       };
       
       setCredentials(credentials);
       
       if (provider) {
-        if (useMockData) {
-          // Use mock data for development purposes
-          console.log("Using mock data");
-          setInstances(getMockInstances(provider));
-          setRdsInstances(getMockRdsInstances(provider));
-          
-          toast({
-            title: "Using demo data",
-            description: "Showing mock instances for demonstration purposes.",
-          });
-        } else {
-          // Fetch real instances from AWS/Azure
-          console.log("Fetching real data from cloud provider...");
-          try {
-            const { instances: realInstances, rdsInstances: realRdsInstances } = 
-              await fetchRealInstances(provider, credentials);
-            
-            console.log("Fetched real instances:", realInstances);
-            console.log("Fetched real RDS instances:", realRdsInstances);
-            
-            setInstances(realInstances);
-            setRdsInstances(realRdsInstances);
-            
-            toast({
-              title: "Successfully connected",
-              description: `Found ${realInstances.length} instances and ${realRdsInstances.length} database instances.`,
-            });
-          } catch (fetchError) {
-            console.error("Error fetching real instances:", fetchError);
-            setError(fetchError instanceof Error ? fetchError.message : "Failed to fetch cloud resources");
-            setIsLoading(false);
-            return;
-          }
-        }
+        // For demo purposes, always use mock data
+        console.log("Using mock data");
+        setInstances(getMockInstances(provider));
+        setRdsInstances(getMockRdsInstances(provider));
+        
+        toast({
+          title: "Connected successfully",
+          description: "Your cloud credentials have been validated.",
+        });
         
         // Navigate based on report type
         if (reportType === "utilization") {
@@ -177,31 +148,6 @@ const EnterCredentials = () => {
                     onChange={(e) => setSecretAccessKey(e.target.value)}
                     placeholder="●●●●●●●●●●●●●●●●●●●●"
                   />
-                </div>
-                
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700">
-                    {provider === "aws" ? "AWS Account ID (Optional)" : "Azure Tenant ID (Optional)"}
-                  </label>
-                  <Input
-                    value={accountId}
-                    onChange={(e) => setAccountId(e.target.value)}
-                    placeholder={provider === "aws" ? "123456789012" : "Azure Tenant ID"}
-                  />
-                </div>
-                
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="useMockData" 
-                    checked={useMockData} 
-                    onCheckedChange={(checked) => setUseMockData(checked === true)}
-                  />
-                  <label 
-                    htmlFor="useMockData" 
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                  >
-                    Use demo data (check this if you don't have valid credentials)
-                  </label>
                 </div>
               </div>
             </CardContent>
