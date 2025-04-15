@@ -7,7 +7,7 @@ import Layout from "@/components/Layout";
 import Stepper from "@/components/Stepper";
 import { useReport } from "@/context/ReportContext";
 import { jsPDF } from "jspdf";
-import autoTable from '@jspdf/autotable'; // Import autoTable
+import autoTable from 'jspdf-autotable';
 import { 
   Chart as ChartJS, 
   CategoryScale, 
@@ -80,11 +80,23 @@ const GenerateReport = () => {
     const margin = 20;
     let yPos = margin;
 
-    // Add logo and title
-    doc.setFontSize(24);
-    doc.setTextColor(0, 120, 212);
+    // Add title
+    doc.setFontSize(20);
+    doc.setTextColor(0, 0, 0);
     doc.text("Nubinix Cloud Insights", pageWidth / 2, yPos, { align: "center" });
+    yPos += 15;
+
+    // Report type
+    doc.setFontSize(14);
+    doc.text(`Daily Utilization Report - ${reportConfig.provider.toUpperCase()}`, pageWidth / 2, yPos, { align: "center" });
     yPos += 20;
+
+    // Generated date
+    doc.setFontSize(12);
+    const date = new Date();
+    const formattedDate = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}, ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+    doc.text(`Generated on: ${formattedDate}`, margin, yPos);
+    yPos += 25;
 
     // Report type
     doc.setFontSize(16);
@@ -102,7 +114,12 @@ const GenerateReport = () => {
     doc.text("Selected Instances", margin, yPos);
     yPos += 10;
 
-    // Instance table headers
+    // Selected Instances
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'normal');
+    doc.text("Selected Instances", margin, yPos);
+    yPos += 10;
+
     const instanceHeaders = [["Instance ID", "Name", "Type", "Region"]];
     const instanceData = reportConfig.instances.map(instance => [
         instance.id,
@@ -111,24 +128,39 @@ const GenerateReport = () => {
         instance.region
     ]);
 
-    doc.autoTable({
+    autoTable(doc, {
         head: instanceHeaders,
         body: instanceData,
         startY: yPos,
         margin: { left: margin },
-        headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0] },
-        theme: 'grid'
+        headStyles: {
+            fillColor: [245, 245, 245],
+            textColor: [0, 0, 0],
+            fontSize: 10,
+            fontStyle: 'bold'
+        },
+        bodyStyles: {
+            fontSize: 9
+        },
+        theme: 'grid',
+        styles: {
+            cellPadding: 3,
+            fontSize: 9,
+            lineColor: [200, 200, 200],
+            lineWidth: 0.1
+        }
     });
 
     yPos = (doc as any).lastAutoTable.finalY + 20;
 
     // Selected Database Instances section
     if (reportConfig.rdsInstances && reportConfig.rdsInstances.length > 0) {
+        yPos = (doc as any).lastAutoTable.finalY + 20;
+        
         doc.setFontSize(14);
         doc.text("Selected Database Instances", margin, yPos);
         yPos += 10;
 
-        // Database table headers
         const dbHeaders = [["Instance ID", "Name", "Engine", "Region"]];
         const dbData = reportConfig.rdsInstances.map(instance => [
             instance.id,
@@ -137,13 +169,27 @@ const GenerateReport = () => {
             instance.region
         ]);
 
-        doc.autoTable({
+        autoTable(doc, {
             head: dbHeaders,
             body: dbData,
             startY: yPos,
             margin: { left: margin },
-            headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0] },
-            theme: 'grid'
+            headStyles: {
+                fillColor: [245, 245, 245],
+                textColor: [0, 0, 0],
+                fontSize: 10,
+                fontStyle: 'bold'
+            },
+            bodyStyles: {
+                fontSize: 9
+            },
+            theme: 'grid',
+            styles: {
+                cellPadding: 3,
+                fontSize: 9,
+                lineColor: [200, 200, 200],
+                lineWidth: 0.1
+            }
         });
     }
 
