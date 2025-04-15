@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/components/ui/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
 import Layout from "@/components/Layout";
 import Stepper from "@/components/Stepper";
 import { useReport } from "@/context/ReportContext";
