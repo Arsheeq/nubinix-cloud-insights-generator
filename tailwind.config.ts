@@ -28,6 +28,12 @@ export default {
 					DEFAULT: 'hsl(var(--primary))',
 					foreground: 'hsl(var(--primary-foreground))'
 				},
+				nubinix: {
+					blue: '#40C0E7',
+					purple: '#8850AA',
+					pink: '#E87BB5',
+					gradient: 'linear-gradient(90deg, #40C0E7 0%, #8850AA 50%, #E87BB5 100%)',
+				},
 				secondary: {
 					DEFAULT: 'hsl(var(--secondary))',
 					foreground: 'hsl(var(--secondary-foreground))'
