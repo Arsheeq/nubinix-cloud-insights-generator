@@ -5,21 +5,25 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useToast } from "@/components/ui/use-toast";
 import Layout from "@/components/Layout";
 import Stepper from "@/components/Stepper";
 import { useReport } from "@/context/ReportContext";
 import { getMockInstances, getMockRdsInstances } from "@/utils/mockData";
+import { fetchRealInstances } from "@/utils/awsUtils";
 
 const steps = ["Cloud Provider", "Credentials", "Instances", "Report Type", "Generate"];
 
 const EnterCredentials = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const { provider, setCredentials, setInstances, setRdsInstances } = useReport();
   const [accessKeyId, setAccessKeyId] = useState("");
   const [secretAccessKey, setSecretAccessKey] = useState("");
   const [accountId, setAccountId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [useMockData, setUseMockData] = useState(false);
 
   const handleBack = () => {
     navigate("/");
@@ -36,21 +40,40 @@ const EnterCredentials = () => {
     setError(null);
 
     try {
-      // In a real application, this would be an API call to validate credentials
-      // For now, we'll simulate a network request
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
       // Store credentials
-      setCredentials({
+      const credentials = {
         accessKeyId,
         secretAccessKey,
         accountId: accountId || undefined
-      });
+      };
       
-      // Load mock instances based on provider
+      setCredentials(credentials);
+      
       if (provider) {
-        setInstances(getMockInstances(provider));
-        setRdsInstances(getMockRdsInstances(provider));
+        if (useMockData) {
+          // Use mock data for development purposes
+          setInstances(getMockInstances(provider));
+          setRdsInstances(getMockRdsInstances(provider));
+        } else {
+          // Fetch real instances from AWS/Azure
+          try {
+            const { instances: realInstances, rdsInstances: realRdsInstances } = 
+              await fetchRealInstances(provider, credentials);
+            
+            setInstances(realInstances);
+            setRdsInstances(realRdsInstances);
+            
+            toast({
+              title: "Successfully connected",
+              description: `Found ${realInstances.length} instances and ${realRdsInstances.length} database instances.`,
+            });
+          } catch (fetchError) {
+            console.error("Error fetching real instances:", fetchError);
+            setError(fetchError instanceof Error ? fetchError.message : "Failed to fetch cloud resources");
+            return;
+          }
+        }
+        
         navigate("/instances");
       } else {
         throw new Error("No cloud provider selected");
@@ -122,6 +145,20 @@ const EnterCredentials = () => {
                   onChange={(e) => setAccountId(e.target.value)}
                   placeholder={provider === "aws" ? "123456789012" : "Azure Tenant ID"}
                 />
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="useMockData" 
+                  checked={useMockData} 
+                  onCheckedChange={(checked) => setUseMockData(checked === true)}
+                />
+                <label 
+                  htmlFor="useMockData" 
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Use demo data (check this if you don't have valid credentials)
+                </label>
               </div>
             </div>
           </CardContent>
