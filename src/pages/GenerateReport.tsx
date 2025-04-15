@@ -3,9 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useToast } from "@/components/ui/use-toast";
+import { toast } from "@/components/ui/use-toast";
 import Layout from "@/components/Layout";
 import Stepper from "@/components/Stepper";
 import { useReport } from "@/context/ReportContext";
+import { pdfService } from "@/services/pdfService";
 import { jsPDF } from "jspdf";
 import autoTable from 'jspdf-autotable';
 import { 
@@ -46,9 +49,11 @@ const getSteps = (reportType) => {
 const GenerateReport = () => {
   const navigate = useNavigate();
   const { reportConfig, resetReport } = useReport();
+  const toast = useToast();
   const [isGenerating, setIsGenerating] = useState(true);
   const [isComplete, setIsComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [accountName, setAccountName] = useState<string>("");
 
   const steps = getSteps(reportConfig?.reportType || "utilization");
 
@@ -72,19 +77,75 @@ const GenerateReport = () => {
     navigate("/");
   };
 
-  const generatePDF = () => {
+  const generatePDF = async () => {
     if (!reportConfig) return;
+    
+    const { toast } = useToast();
 
+    try {
+      if (!accountName) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Please enter an account name",
+        });
+        return;
+      }
+      const filename = await pdfService.generateReport(reportConfig, accountName);
+      toast({
+        title: "Report Generated Successfully",
+        description: `Report saved as ${filename}`,
+      });
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to generate PDF report",
+      });
+    }
     const doc = new jsPDF();
+    const height = doc.internal.pageSize.getHeight();
+    const width = doc.internal.pageSize.getWidth();
+    const inch = 72; // Points per inch
+
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 20;
     let yPos = margin;
 
-    // Add title
-    doc.setFontSize(20);
+    // Title page
+    doc.setFontSize(36);
     doc.setTextColor(0, 0, 0);
-    doc.text("Nubinix Cloud Insights", pageWidth / 2, yPos, { align: "center" });
-    yPos += 15;
+    doc.text(`${reportConfig.provider.toUpperCase()}`, pageWidth / 2, height / 2 - 25, { align: "center" });
+    doc.text("Account Daily Report", pageWidth / 2, height / 2 + 25, { align: "center" });
+
+    // Add new page for content
+    doc.addPage();
+    yPos = margin;
+
+    // Report header
+    doc.setFontSize(20);
+    doc.text("Cloud Infrastructure Report", pageWidth / 2, yPos, { align: "center" });
+    yPos += 30;
+
+    // Report info table
+    const date = new Date();
+    const reportInfo = [
+      ["Report Type", `${reportConfig.frequency.charAt(0).toUpperCase() + reportConfig.frequency.slice(1)} ${reportConfig.reportType.charAt(0).toUpperCase() + reportConfig.reportType.slice(1)} Report`],
+      ["Cloud Provider", reportConfig.provider.toUpperCase()],
+      ["Generated On", date.toLocaleString()],
+    ];
+
+    // Add report info table
+    autoTable(doc, {
+      body: reportInfo,
+      theme: 'grid',
+      startY: yPos,
+      styles: { fontSize: 10, cellPadding: 5 },
+      columnStyles: { 0: { fontStyle: 'bold', fillColor: [245, 245, 245] } },
+    });
+
+    yPos = (doc as any).lastAutoTable.finalY + 20;
 
     // Report type
     doc.setFontSize(14);
@@ -93,8 +154,8 @@ const GenerateReport = () => {
 
     // Generated date
     doc.setFontSize(12);
-    const date = new Date();
-    const formattedDate = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}, ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+    const currentDate = new Date();
+    const formattedDate = `${currentDate.getDate().toString().padStart(2, '0')}/${(currentDate.getMonth() + 1).toString().padStart(2, '0')}/${currentDate.getFullYear()}, ${currentDate.getHours().toString().padStart(2, '0')}:${currentDate.getMinutes().toString().padStart(2, '0')}:${currentDate.getSeconds().toString().padStart(2, '0')}`;
     doc.text(`Generated on: ${formattedDate}`, margin, yPos);
     yPos += 25;
 
@@ -110,8 +171,15 @@ const GenerateReport = () => {
     yPos += 20;
 
     // Selected Instances section
+    doc.addPage();
+    yPos = margin + 20;
+    doc.setFontSize(16);
+    doc.text("Selected Resources", pageWidth / 2, yPos, { align: "center" });
+    yPos += 20;
+
+    // EC2 Instances section
     doc.setFontSize(14);
-    doc.text("Selected Instances", margin, yPos);
+    doc.text("EC2 Instances", margin, yPos);
     yPos += 10;
 
     // Selected Instances
@@ -127,6 +195,24 @@ const GenerateReport = () => {
         instance.type,
         instance.region
     ]);
+
+    // Add header with logo
+    const addHeader = (doc) => {
+      doc.setFontSize(10);
+      doc.text("www.nubinix.com", margin, height - 0.5 * inch);
+
+      // Add border
+      doc.setLineWidth(1);
+      const borderMargin = 0.2 * inch;
+      doc.rect(borderMargin, borderMargin, width - 2 * borderMargin, height - 2 * borderMargin);
+    };
+
+    // Add header to all pages
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      addHeader(doc);
+    }
 
     autoTable(doc, {
         head: instanceHeaders,
@@ -156,7 +242,7 @@ const GenerateReport = () => {
     // Selected Database Instances section
     if (reportConfig.rdsInstances && reportConfig.rdsInstances.length > 0) {
         yPos = (doc as any).lastAutoTable.finalY + 20;
-        
+
         doc.setFontSize(14);
         doc.text("Selected Database Instances", margin, yPos);
         yPos += 10;
@@ -328,6 +414,20 @@ const GenerateReport = () => {
             ) : isComplete ? (
               <div className="space-y-6">
                 <div className="flex flex-col items-center py-4">
+                  <div className="w-full max-w-sm mb-4">
+                    <label htmlFor="accountName" className="block text-sm font-medium text-gray-700 mb-1">
+                      Account Name
+                    </label>
+                    <input
+                      type="text"
+                      id="accountName"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={accountName}
+                      onChange={(e) => setAccountName(e.target.value)}
+                      placeholder="Enter account name"
+                      required
+                    />
+                  </div>
                   <div className="bg-green-100 text-green-800 p-2 rounded-full">
                     <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
