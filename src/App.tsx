@@ -7,8 +7,10 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ReportProvider } from "@/context/ReportContext";
 
 import SelectProvider from "./pages/SelectProvider";
+import ReportTypeSelection from "./pages/ReportTypeSelection";
 import EnterCredentials from "./pages/EnterCredentials";
 import SelectInstances from "./pages/SelectInstances";
+import DateSelection from "./pages/DateSelection";
 import ReportType from "./pages/ReportType";
 import GenerateReport from "./pages/GenerateReport";
 import NotFound from "./pages/NotFound";
@@ -24,9 +26,11 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<SelectProvider />} />
+            <Route path="/report-type" element={<ReportTypeSelection />} />
             <Route path="/credentials" element={<EnterCredentials />} />
             <Route path="/instances" element={<SelectInstances />} />
-            <Route path="/report-type" element={<ReportType />} />
+            <Route path="/date-selection" element={<DateSelection />} />
+            <Route path="/report-details" element={<ReportType />} />
             <Route path="/generate-report" element={<GenerateReport />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

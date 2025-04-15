@@ -25,11 +25,19 @@ export interface RDSInstance {
 
 export type CloudProvider = "aws" | "azure";
 export type ReportFrequency = "daily" | "weekly" | "monthly";
+export type ReportType = "utilization" | "billing";
+
+export interface BillingPeriod {
+  year: string;
+  month: string;
+}
 
 export interface ReportConfig {
   provider: CloudProvider;
+  reportType: ReportType | null;
   credentials: CloudCredentials;
   instances: Instance[];
   rdsInstances: RDSInstance[];
   frequency: ReportFrequency;
+  billingPeriod: BillingPeriod | null;
 }

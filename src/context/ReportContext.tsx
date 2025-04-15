@@ -6,12 +6,16 @@ import {
   Instance,
   RDSInstance,
   ReportConfig,
-  ReportFrequency
+  ReportFrequency,
+  ReportType,
+  BillingPeriod
 } from "@/types";
 
 interface ReportContextType {
   provider: CloudProvider | null;
   setProvider: (provider: CloudProvider) => void;
+  reportType: ReportType | null;
+  setReportType: (reportType: ReportType) => void;
   credentials: CloudCredentials | null;
   setCredentials: (credentials: CloudCredentials) => void;
   instances: Instance[];
@@ -26,6 +30,8 @@ interface ReportContextType {
   selectAllRdsInstances: (selected: boolean) => void;
   frequency: ReportFrequency;
   setFrequency: (frequency: ReportFrequency) => void;
+  billingPeriod: BillingPeriod | null;
+  setBillingPeriod: (period: BillingPeriod) => void;
   resetReport: () => void;
   reportConfig: ReportConfig | null;
 }
@@ -34,10 +40,12 @@ const ReportContext = createContext<ReportContextType | undefined>(undefined);
 
 export const ReportProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [provider, setProvider] = useState<CloudProvider | null>(null);
+  const [reportType, setReportType] = useState<ReportType | null>(null);
   const [credentials, setCredentials] = useState<CloudCredentials | null>(null);
   const [instances, setInstances] = useState<Instance[]>([]);
   const [rdsInstances, setRdsInstances] = useState<RDSInstance[]>([]);
   const [frequency, setFrequency] = useState<ReportFrequency>("daily");
+  const [billingPeriod, setBillingPeriod] = useState<BillingPeriod | null>(null);
 
   const toggleInstanceSelection = (id: string) => {
     setInstances(
@@ -65,10 +73,12 @@ export const ReportProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const resetReport = () => {
     setProvider(null);
+    setReportType(null);
     setCredentials(null);
     setInstances([]);
     setRdsInstances([]);
     setFrequency("daily");
+    setBillingPeriod(null);
   };
 
   const selectedInstances = instances.filter((instance) => instance.selected);
@@ -78,10 +88,12 @@ export const ReportProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const reportConfig = provider && credentials 
     ? {
         provider,
+        reportType,
         credentials,
         instances: selectedInstances,
         rdsInstances: selectedRdsInstances,
         frequency,
+        billingPeriod,
       }
     : null;
 
@@ -90,6 +102,8 @@ export const ReportProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       value={{
         provider,
         setProvider,
+        reportType,
+        setReportType,
         credentials,
         setCredentials,
         instances,
@@ -104,6 +118,8 @@ export const ReportProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         selectAllRdsInstances,
         frequency,
         setFrequency,
+        billingPeriod,
+        setBillingPeriod,
         resetReport,
         reportConfig
       }}
