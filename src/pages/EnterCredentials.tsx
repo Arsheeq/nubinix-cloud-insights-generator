@@ -73,21 +73,57 @@ const EnterCredentials = () => {
       setCredentials(credentials);
       
       if (provider) {
-        // For demo purposes, always use mock data
-        console.log("Using mock data");
-        setInstances(getMockInstances(provider));
-        setRdsInstances(getMockRdsInstances(provider));
+        try {
+          // Validate credentials
+          const response = await fetch('http://localhost:8000/validate-credentials', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              accessKeyId,
+              secretAccessKey,
+              region: 'me-central-1'
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error('Invalid credentials');
+          }
+
+          // Fetch instances
+          const instancesResponse = await fetch('http://localhost:8000/instances', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              accessKeyId,
+              secretAccessKey
+            }),
+          });
+
+          if (!instancesResponse.ok) {
+            throw new Error('Failed to fetch instances');
+          }
+
+          const data = await instancesResponse.json();
+          setInstances(data.ec2Instances || []);
+          setRdsInstances(data.rdsInstances || []);
+
+          toast({
+            title: "Connected successfully",
+            description: "Your cloud credentials have been validated.",
+          });
         
-        toast({
-          title: "Connected successfully",
-          description: "Your cloud credentials have been validated.",
-        });
-        
-        // Navigate based on report type
-        if (reportType === "utilization") {
-          navigate("/instances");
-        } else {
-          navigate("/date-selection");
+          // Navigate based on report type
+          if (reportType === "utilization") {
+            navigate("/instances");
+          } else {
+            navigate("/date-selection");
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "An error occurred");
         }
       } else {
         throw new Error("No cloud provider selected");

@@ -1,96 +1,41 @@
-
-import React from "react";
-import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 
-interface StepProps {
+interface StepperProps {
   steps: string[];
   currentStep: number;
 }
 
-const stepVariants = {
-  inactive: { scale: 1, opacity: 0.8 },
-  active: { 
-    scale: 1.1, 
-    opacity: 1,
-    transition: { type: "spring", stiffness: 300, damping: 20 }
-  },
-  completed: { scale: 1, opacity: 1 }
-};
-
-const lineVariants = {
-  inactive: { 
-    background: "var(--bg-gray-300)",
-    transition: { duration: 0.5 }
-  },
-  active: { 
-    background: "var(--bg-blue-600)",
-    transition: { duration: 0.5 }
-  }
-};
-
-export function Stepper({ steps, currentStep }: StepProps) {
+const Stepper = ({ steps, currentStep }: StepperProps) => {
   return (
-    <div className="w-full py-6">
-      <div className="flex items-center justify-between">
-        {steps.map((step, index) => (
-          <React.Fragment key={step}>
-            <motion.div 
-              className="flex flex-col items-center"
-              initial="inactive"
-              animate={
-                index < currentStep 
-                  ? "completed" 
-                  : index === currentStep 
-                  ? "active" 
-                  : "inactive"
-              }
-              whileHover={{ scale: 1.05 }}
-            >
-              <motion.div 
-                className={cn(
-                  "w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium transition-all duration-300", 
-                  index < currentStep 
-                    ? "bg-blue-600" 
-                    : index === currentStep 
-                    ? "bg-blue-500" 
-                    : "bg-gray-300"
-                )}
-                variants={stepVariants}
+    <div className="flex items-center w-full max-w-4xl mx-auto">
+      {steps.map((step, index) => {
+        const isCompleted = index < currentStep;
+        const isCurrent = index === currentStep;
+
+        return (
+          <div key={index} className="flex items-center flex-1 last:flex-none">
+            <div className="flex flex-col items-center flex-1">
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                  isCompleted
+                    ? "bg-nubinix-blue text-white"
+                    : isCurrent
+                    ? "bg-nubinix-purple text-white"
+                    : "bg-gray-200 text-gray-600"
+                }`}
               >
                 {index + 1}
-              </motion.div>
-              <motion.div 
-                className="text-sm font-medium mt-2 text-center"
-                variants={{
-                  inactive: { opacity: 0.7 },
-                  active: { opacity: 1, fontWeight: 600 },
-                  completed: { opacity: 1 }
-                }}
-              >
-                {step}
-              </motion.div>
-            </motion.div>
-            
+              </div>
+              <div className="text-sm mt-2 text-center text-gray-600">{step}</div>
+            </div>
             {index < steps.length - 1 && (
-              <motion.div 
-                className={cn(
-                  "h-1 flex-1 mx-4",
-                  index < currentStep ? "bg-blue-600" : "bg-gray-300"
-                )}
-                variants={lineVariants}
-                initial="inactive"
-                animate={index < currentStep ? "active" : "inactive"}
-                style={{ 
-                  backgroundColor: index < currentStep ? "rgb(37, 99, 235)" : "rgb(209, 213, 219)"
-                }}
-              />
+              <div className="h-[2px] bg-gray-200 w-full mx-4" />
             )}
-          </React.Fragment>
-        ))}
-      </div>
+          </div>
+        );
+      })}
     </div>
   );
-}
+};
 
 export default Stepper;
