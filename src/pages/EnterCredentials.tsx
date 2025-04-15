@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,13 @@ const EnterCredentials = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [useMockData, setUseMockData] = useState(false);
+
+  // Redirect if no provider selected
+  useEffect(() => {
+    if (!provider) {
+      navigate("/");
+    }
+  }, [provider, navigate]);
 
   const handleBack = () => {
     navigate("/");
@@ -53,13 +60,23 @@ const EnterCredentials = () => {
       if (provider) {
         if (useMockData) {
           // Use mock data for development purposes
+          console.log("Using mock data");
           setInstances(getMockInstances(provider));
           setRdsInstances(getMockRdsInstances(provider));
+          
+          toast({
+            title: "Using demo data",
+            description: "Showing mock instances for demonstration purposes.",
+          });
         } else {
           // Fetch real instances from AWS/Azure
+          console.log("Fetching real data from cloud provider...");
           try {
             const { instances: realInstances, rdsInstances: realRdsInstances } = 
               await fetchRealInstances(provider, credentials);
+            
+            console.log("Fetched real instances:", realInstances);
+            console.log("Fetched real RDS instances:", realRdsInstances);
             
             setInstances(realInstances);
             setRdsInstances(realRdsInstances);
@@ -85,11 +102,6 @@ const EnterCredentials = () => {
       setIsLoading(false);
     }
   };
-
-  if (!provider) {
-    navigate("/");
-    return null;
-  }
 
   return (
     <Layout>
