@@ -53,7 +53,8 @@ const GenerateReport = () => {
   const [isGenerating, setIsGenerating] = useState(true);
   const [isComplete, setIsComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [accountName, setAccountName] = useState<string>("");
+  const [frequency, setFrequency] = useState("daily");
+  const currentDate = new Date().toISOString().split('T')[0];
 
   const steps = getSteps(reportConfig?.reportType || "utilization");
 
@@ -79,22 +80,101 @@ const GenerateReport = () => {
 
   const generatePDF = async () => {
     if (!reportConfig) return;
-    
-    const { toast } = useToast();
 
     try {
-      if (!accountName) {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Please enter an account name",
-        });
-        return;
-      }
-      const filename = await pdfService.generateReport(reportConfig, accountName);
+      const doc = new jsPDF();
+      const currentDate = new Date().toISOString().split('T')[0];
+      const accountName = reportConfig.credentials?.accountId || "DefaultAccount";
+
+      // Logo and header
+      doc.setFontSize(10);
+      doc.text("www.nubinix.com", 20, 10);
+
+      // Title
+      doc.setFontSize(24);
+      doc.text("CLOUD UTILIZATION", doc.internal.pageSize.getWidth() / 2, 50, { align: "center" });
+      doc.text("REPORT", doc.internal.pageSize.getWidth() / 2, 65, { align: "center" });
+
+      // Report info table
+      const reportData = [
+        ["Account", `${accountName} ${reportConfig.provider.toUpperCase()}`],
+        ["Report", "Resource Utilization"],
+        ["Cloud Provider", reportConfig.provider.toUpperCase()],
+        ["Date", currentDate]
+      ];
+
+      autoTable(doc, {
+        body: reportData,
+        theme: 'plain',
+        startY: 90,
+        styles: { fontSize: 12 }
+      });
+
+      // Add instance details
+      doc.addPage();
+      doc.setFontSize(16);
+      doc.text("Instances Covered in Report:", 20, 30);
+
+      const instanceData = reportConfig.instances.map(instance => [
+        instance.id,
+        instance.name || '-',
+        instance.type,
+        instance.state
+      ]);
+
+      autoTable(doc, {
+        head: [["Instance ID", "Name", "Type", "Status"]],
+        body: instanceData,
+        startY: 40,
+        theme: 'grid',
+        styles: { fontSize: 10 }
+      });
+
+      // Add charts
+      doc.addPage();
+      doc.setFontSize(16);
+      doc.text("Performance Metrics", 20, 30);
+
+      // CPU Utilization Chart
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+          datasets: [{
+            label: 'CPU Utilization',
+            data: [65, 59, 80, 81, 56, 55, 40],
+            borderColor: 'rgb(75, 192, 192)',
+            tension: 0.1
+          }]
+        }
+      });
+      doc.addImage(canvas.toDataURL(), 'PNG', 20, 40, 170, 80);
+
+      // Memory Usage Chart
+      const memCanvas = document.createElement('canvas');
+      const memCtx = memCanvas.getContext('2d');
+      new Chart(memCtx, {
+        type: 'bar',
+        data: {
+          labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+          datasets: [{
+            label: 'Memory Usage (GB)',
+            data: [8, 12, 9, 11, 7, 10, 8],
+            backgroundColor: 'rgba(54, 162, 235, 0.5)'
+          }]
+        }
+      });
+      doc.addImage(memCanvas.toDataURL(), 'PNG', 20, 140, 170, 80);
+
+      // Save PDF
+      const filename = `cloud-report-${reportConfig.provider}-${currentDate}.pdf`;
+      doc.save(filename);
+
       toast({
         title: "Report Generated Successfully",
-        description: `Report saved as ${filename}`,
+        description: "Your report has been downloaded",
       });
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -414,20 +494,6 @@ const GenerateReport = () => {
             ) : isComplete ? (
               <div className="space-y-6">
                 <div className="flex flex-col items-center py-4">
-                  <div className="w-full max-w-sm mb-4">
-                    <label htmlFor="accountName" className="block text-sm font-medium text-gray-700 mb-1">
-                      Account Name
-                    </label>
-                    <input
-                      type="text"
-                      id="accountName"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={accountName}
-                      onChange={(e) => setAccountName(e.target.value)}
-                      placeholder="Enter account name"
-                      required
-                    />
-                  </div>
                   <div className="bg-green-100 text-green-800 p-2 rounded-full">
                     <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>

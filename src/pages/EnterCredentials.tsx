@@ -32,6 +32,7 @@ const EnterCredentials = () => {
   const { provider, reportType, setCredentials, setInstances, setRdsInstances } = useReport();
   const [accessKeyId, setAccessKeyId] = useState("");
   const [secretAccessKey, setSecretAccessKey] = useState("");
+  const [accountName, setAccountName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -55,8 +56,8 @@ const EnterCredentials = () => {
 
   const handleNext = async () => {
     // Validate inputs
-    if (!accessKeyId || !secretAccessKey) {
-      setError("Access Key ID and Secret Access Key are required");
+    if (!accessKeyId || !secretAccessKey || !accountName) {
+      setError("Account Name, Access Key ID and Secret Access Key are required");
       return;
     }
 
@@ -156,6 +157,15 @@ const EnterCredentials = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Account Name</label>
+                  <Input
+                    value={accountName}
+                    onChange={(e) => setAccountName(e.target.value)}
+                    placeholder="Enter account name"
+                    className="focus-visible:ring-nubinix-blue"
+                  />
+                </div>
                 {error && (
                   <Alert variant="destructive">
                     <AlertDescription>{error}</AlertDescription>

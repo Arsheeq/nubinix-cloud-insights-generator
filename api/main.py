@@ -1,274 +1,230 @@
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from typing import List, Optional
 from pydantic import BaseModel
 import boto3
-from botocore.exceptions import ClientError, NoCredentialsError
+from datetime import datetime, timedelta
 import os
 import tempfile
-from datetime import datetime, timedelta
 import pytz
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
-import matplotlib.pyplot as plt
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
+from reportlab.pdfgen import canvas
+
+class Instance(BaseModel):
+    id: str
+    name: str = ""
+    type: str
+    state: str
+    selected: bool = False
+    region: str = ""
+    os: str = "linux"
 
 class Credentials(BaseModel):
     accessKeyId: str
     secretAccessKey: str
     region: Optional[str] = None
     accountId: Optional[str] = None
+    accountName: str
 
-class Instance(BaseModel):
-    id: str
-    name: str
-    type: str
-    state: str
-    region: str
-    selected: bool = False
+class ReportRequest(BaseModel):
+    provider: str
+    credentials: Credentials
+    selected_instances: List[Instance]
+    frequency: str
 
 app = FastAPI()
 
+# Configure CORS properly
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"]
 )
 
-def create_metric_graph(cloudwatch, instance_id, metric_name, namespace, unit, start_time, end_time, period=300):
-    try:
-        response = cloudwatch.get_metric_statistics(
-            Namespace=namespace,
-            MetricName=metric_name,
-            Dimensions=[{'Name': 'InstanceId', 'Value': instance_id}],
-            StartTime=start_time,
-            EndTime=end_time,
-            Period=period,
-            Statistics=['Average']
-        )
-        
-        if response['Datapoints']:
-            datapoints = sorted(response['Datapoints'], key=lambda x: x['Timestamp'])
-            times = [d['Timestamp'] for d in datapoints]
-            values = [d['Average'] for d in datapoints]
-            
-            plt.figure(figsize=(8, 4))
-            plt.plot(times, values)
-            plt.title(f"{metric_name} Over Time")
-            plt.xlabel("Time")
-            plt.ylabel(f"{metric_name} ({unit})")
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            
-            # Save to temp file
-            temp_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
-            plt.savefig(temp_file.name)
-            plt.close()
-            
-            return temp_file.name, sum(values) / len(values)
-    except Exception as e:
-        print(f"Error getting metric {metric_name}: {str(e)}")
-        return None, None
-    
-    return None, None
+# Ensure temp directory exists
+if not os.path.exists("temp_reports"):
+    os.makedirs("temp_reports")
+
+def generate_metric_graph(metric_data, metric_name, instance_name, temp_dir):
+    if not metric_data or not metric_data.get('Datapoints'):
+        return None
+
+    os.makedirs(temp_dir, exist_ok=True)
+    time_series = metric_data['Datapoints']
+    time_series.sort(key=lambda x: x['Timestamp'])
+    timestamps = [point['Timestamp'] for point in time_series]
+    values = [point['Average'] for point in time_series]
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(timestamps, values, color='#FF0066', linewidth=2.5, 
+             marker='o', markersize=3, markerfacecolor='#FF0066', 
+             label='Average', alpha=0.9)
+
+    unit = time_series[0]['Unit'] if time_series else 'Percent'
+    plt.xlabel('Time', fontweight='bold')
+    plt.ylabel(f"{metric_name} ({unit})", fontweight='bold')
+
+    start_time = min(timestamps)
+    end_time = max(timestamps)
+    start_str = start_time.strftime('%Y-%m-%d %H:%M')
+    end_str = end_time.strftime('%Y-%m-%d %H:%M')
+    plt.title(f'{instance_name}: {metric_name}\n{start_str} to {end_str}', fontweight='bold')
+
+    plt.gcf().autofmt_xdate()
+    plt.xlim(start_time, end_time)
+    plt.grid(True, linestyle='--', alpha=0.7)
+
+    if values:
+        min_val = min(values)
+        max_val = max(values)
+        avg_val = sum(values) / len(values)
+        stats_text = f"Min: {min_val:.2f}% | Max: {max_val:.2f}% | Avg: {avg_val:.2f}%"
+        plt.figtext(0.5, 0.01, stats_text, ha='center', fontsize=10, fontweight='bold')
+
+    plt.tight_layout()
+    filename = f"{temp_dir}/{instance_name}_{metric_name.lower()}.png"
+    plt.savefig(filename, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    return filename
+
+def get_time_range(frequency):
+    now = datetime.now(pytz.UTC)
+    if frequency == "daily":
+        start_time = now - timedelta(days=1)
+    elif frequency == "weekly":
+        start_time = now - timedelta(weeks=1)
+    else:  # monthly
+        start_time = now - timedelta(days=30)
+    return start_time, now
 
 @app.post("/generate-report")
-async def generate_report(provider: str, credentials: Credentials, selected_instances: List[Instance], frequency: str):
+async def generate_report(request: ReportRequest):
     try:
-        # Calculate time period based on frequency
-        now = datetime.now()
-        if frequency == "daily":
-            start_time = now - timedelta(days=1)
-        elif frequency == "weekly":
-            start_time = now - timedelta(weeks=1)
-        else:  # monthly
-            start_time = now - timedelta(days=30)
+        start_time, end_time = get_time_range(request.frequency)
+        temp_dir = tempfile.mkdtemp(dir="temp_reports") #Use temp_reports directory
+        pdf_filename = f"{request.credentials.accountName}-{datetime.now().strftime('%Y-%m-%d')}.pdf"
+        pdf_path = os.path.join(temp_dir, pdf_filename)
 
         session = boto3.Session(
-            aws_access_key_id=credentials.accessKeyId,
-            aws_secret_access_key=credentials.secretAccessKey,
-            region_name=credentials.region or 'me-central-1'
-        )
-
-        # Initialize clients
-        cloudwatch = session.client('cloudwatch')
-        ec2 = session.client('ec2')
-        rds = session.client('rds')
-
-        # Create PDF
-        doc = SimpleDocTemplate("report.pdf", pagesize=letter)
-        styles = getSampleStyleSheet()
-        
-        # Custom styles
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Title'],
-            textColor=colors.HexColor('#0078D4'),
-            fontSize=24,
-            spaceAfter=20
-        )
-        
-        heading_style = ParagraphStyle(
-            'CustomHeading',
-            parent=styles['Heading1'],
-            fontSize=16,
-            spaceAfter=15
-        )
-
-        elements = []
-        
-        # Title and header
-        elements.append(Paragraph("Nubinix Cloud Insights", title_style))
-        elements.append(Paragraph(f"{frequency.capitalize()} Utilization Report - {provider.upper()}", heading_style))
-        elements.append(Paragraph(f"Generated on: {now.strftime('%d/%m/%Y %H:%M:%S')}", styles['Normal']))
-        elements.append(Spacer(1, 20))
-
-        # Instance table
-        elements.append(Paragraph("Selected Instances", heading_style))
-        
-        instance_data = [['Instance ID', 'Name', 'Type', 'Region']]
-        for instance in selected_instances:
-            instance_data.append([
-                instance.id,
-                instance.name,
-                instance.type,
-                instance.region
-            ])
-            
-        instance_table = Table(instance_data)
-        instance_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('LEFTPADDING', (0, 0), (-1, -1), 6),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-        ]))
-        elements.append(instance_table)
-
-        # Initialize AWS session
-        session = boto3.Session(
-            aws_access_key_id=credentials.accessKeyId,
-            aws_secret_access_key=credentials.secretAccessKey,
-            region_name=credentials.region or 'me-central-1'
+            aws_access_key_id=request.credentials.accessKeyId,
+            aws_secret_access_key=request.credentials.secretAccessKey,
+            region_name=request.credentials.region or 'us-east-1'
         )
         cloudwatch = session.client('cloudwatch')
-        
-        # Create temporary directory for graphs
-        temp_dir = tempfile.mkdtemp()
-        pdf_path = os.path.join(temp_dir, f"cloud-report-{frequency}-{now.strftime('%Y%m%d')}.pdf")
-        
-        # Initialize PDF
+
         doc = SimpleDocTemplate(pdf_path, pagesize=letter)
         styles = getSampleStyleSheet()
         elements = []
-        
-        # Add title
+
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=styles['Title'],
             fontSize=24,
             spaceAfter=30
         )
-        elements.append(Paragraph("Cloud Infrastructure Report", title_style))
-        elements.append(Spacer(1, 12))
-        
-        # Add report info
-        report_info = [
-            ["Report Type", f"{frequency.capitalize()} Utilization Report"],
-            ["Cloud Provider", provider.upper()],
-            ["Period", f"{start_time.strftime('%Y-%m-%d %H:%M')} to {now.strftime('%Y-%m-%d %H:%M')}"],
-            ["Generated On", now.strftime("%Y-%m-%d %H:%M:%S")]
+        elements.append(Paragraph(f"{request.credentials.accountName}", title_style))
+        elements.append(Paragraph(f"Account {request.frequency.capitalize()} Report", title_style))
+
+        # Add report information table
+        data = [
+            ["Account", request.credentials.accountName],
+            ["Report", "Resource Utilization"],
+            ["Cloud Provider", request.provider.upper()],
+            ["Account ID", request.credentials.accountId or "N/A"],
+            ["Date", datetime.now().strftime("%Y-%m-%d")]
         ]
-        
-        info_table = Table(report_info, colWidths=[2*inch, 4*inch])
-        info_table.setStyle(TableStyle([
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+
+        table = Table(data, colWidths=[1.5*inch, 3*inch])
+        table.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+            ('BACKGROUND', (0, 0), (0, -1), colors.grey),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('PADDING', (0, 0), (-1, -1), 6),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
         ]))
-        elements.append(info_table)
+        elements.append(table)
         elements.append(Spacer(1, 20))
-        
+
         # Process each instance
-        for instance in selected_instances:
+        for instance in request.selected_instances:
             elements.append(PageBreak())
-            elements.append(Paragraph(f"Instance: {instance.name}", styles['Heading1']))
-            elements.append(Spacer(1, 12))
-            
-            # Instance details table
-            instance_details = [
-                ["Property", "Value"],
+            elements.append(Paragraph(f"Host: {instance.name}", styles['Heading1']))
+
+            # Instance info table
+            instance_data = [
                 ["Instance ID", instance.id],
-                ["Instance Type", instance.type],
-                ["Region", instance.region],
+                ["Type", instance.type],
+                ["Operating System", instance.os],
                 ["State", instance.state]
             ]
-            
-            details_table = Table(instance_details)
-            details_table.setStyle(TableStyle([
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+
+            instance_table = Table(instance_data, colWidths=[1.5*inch, 4*inch])
+            instance_table.setStyle(TableStyle([
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+                ('BACKGROUND', (0, 0), (0, -1), colors.white),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('PADDING', (0, 0), (-1, -1), 6),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('PADDING', (0, 0), (-1, -1), 6)
             ]))
-            elements.append(details_table)
+            elements.append(instance_table)
             elements.append(Spacer(1, 20))
-            
-            # Metrics section
-            elements.append(Paragraph("Performance Metrics", styles['Heading2']))
-            elements.append(Spacer(1, 12))
-            
-            metrics = {
-                'CPUUtilization': {'namespace': 'AWS/EC2', 'unit': '%'},
-                'MemoryUtilization': {'namespace': 'CWAgent', 'unit': '%'},
-                'DiskUsedPercent': {'namespace': 'CWAgent', 'unit': '%'},
-                'NetworkIn': {'namespace': 'AWS/EC2', 'unit': 'Bytes'},
-                'NetworkOut': {'namespace': 'AWS/EC2', 'unit': 'Bytes'},
-                'CPUCreditUsage': {'namespace': 'AWS/EC2', 'unit': 'Count'},
-                'CPUCreditBalance': {'namespace': 'AWS/EC2', 'unit': 'Count'}
-            }
-            
-            for metric_name, metric_info in metrics.items():
-                graph_path, avg_value = create_metric_graph(
-                    cloudwatch, 
-                    instance.id,
-                    metric_name,
-                    metric_info['namespace'],
-                    metric_info['unit'],
-                    start_time,
-                    now
-                )
-                
-                if graph_path and avg_value is not None:
-                    elements.append(Paragraph(f"{metric_name}: Average {avg_value:.2f} {metric_info['unit']}", styles['Normal']))
-                    elements.append(Spacer(1, 12))
-                    elements.append(Image(graph_path, width=6*inch, height=3*inch))
-                    elements.append(Spacer(1, 12))
-            
-        # Build PDF
+
+            # Get metrics and generate graphs
+            metrics = ["cpu", "memory", "disk"]
+            for metric in metrics:
+                try:
+                    response = cloudwatch.get_metric_statistics(
+                        Namespace="AWS/EC2",
+                        MetricName=f"{metric}Utilization",
+                        Dimensions=[{"Name": "InstanceId", "Value": instance.id}],
+                        StartTime=start_time,
+                        EndTime=end_time,
+                        Period=300,
+                        Statistics=["Average"]
+                    )
+
+                    if response['Datapoints']:
+                        graph_path = generate_metric_graph(response, metric, instance.name, temp_dir)
+                        if graph_path:
+                            elements.append(Paragraph(f"{metric.upper()} UTILIZATION", styles['Heading2']))
+                            img = Image(graph_path, width=6*inch, height=2*inch)
+                            elements.append(img)
+                            elements.append(Spacer(1, 20))
+                except Exception as e:
+                    print(f"Error getting metrics for {instance.id}: {str(e)}")
+
         doc.build(elements)
+
+        headers = {
+            "Content-Disposition": f"attachment; filename={pdf_filename}",
+            "Access-Control-Expose-Headers": "Content-Disposition",
+            "Access-Control-Allow-Origin": "*"
+        }
         
         return FileResponse(
-            pdf_path,
+            path=pdf_path,
             media_type='application/pdf',
-            filename=f"cloud-report-{frequency}-{now.strftime('%Y%m%d')}.pdf"
+            filename=pdf_filename,
+            headers=headers
         )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-# Include other existing endpoints (validate-credentials, instances, etc.)
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"Error generating report: {str(e)}\n{error_trace}")
+        raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)}")

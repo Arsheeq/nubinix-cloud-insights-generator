@@ -1,9 +1,8 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, UNSAFE_NavigationContext } from "react-router-dom";
 import { ReportProvider } from "@/context/ReportContext";
 
 import SelectProvider from "./pages/SelectProvider";
@@ -16,6 +15,13 @@ import GenerateReport from "./pages/GenerateReport";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
+
+const router = {
+  future: {
+    v7_startTransition: true,
+    v7_relativeSplatPath: true
+  }
+};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
